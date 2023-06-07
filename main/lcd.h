@@ -16,9 +16,11 @@ typedef struct										// 四角形
 
 void lcd_Initialize(void);
 void lcd_Cls(void);
-void lcd_DrawLine(int x0, int y0, int x1, int y1);
+void lcd_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1);
 void lcd_Puts(Rect area, const char *text, CharCode charCode);
 void lcd_PutImage(Rect imageRect, const uint8_t *image, const uint8_t *mask);
 void lcd_Update(void);
+void lcd_BeginDrawing(void);
+void lcd_EndDrawing(void);
 
 #endif

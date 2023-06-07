@@ -18,4 +18,9 @@
 #define GPIO_RES1_NUM		GPIO_NUM_15		// -
 #define GPIO_LED_NUM		GPIO_NUM_16		// LED
 
+// 戻り値
+#define RET_OK			0
+#define RET_NG			1
+#define RET_NOMEMORY	2
+
 #endif

@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 #include "driver/spi.h"
@@ -15,6 +16,7 @@
 #include "global.h"
 #include "setup.h"
 #include "lcd.h"
+#include "sd.h"
 #include "wifi.h"
 
 static const gpio_config_t pinInitialSettings[] =			// pin初期設定
@@ -61,8 +63,9 @@ static const function_config_t functionInitialSettings[] =	// pin機能初期設
 	{PAD_XPD_DCDC_CONF, 0}						// End of data
 };
 
-volatile int s_spiTransDone;					// SPI 転送完了フラグ
-enum PinSetting s_pinStatus;					// 競合ピン設定
+static volatile int s_spiTransDone;					// SPI 転送完了フラグ
+static enum PinSetting s_pinStatus;					// 競合ピン設定
+static xSemaphoreHandle s_communicationPinMutex;	// 通信ピンmutex
 
 static void SetAllGpio(void);
 static void SetSpi(int mosiEnable, int misoEnable, spi_clk_div_t div, int prescale);
@@ -129,10 +132,13 @@ int set_Initialize(void)
 	spi_init(HSPI_HOST, &spiConfig);
 
 	//----- 設定値の初期化 -----
+	s_communicationPinMutex = xSemaphoreCreateMutex();
 	s_pinStatus = PinSetting_Inititialized;
 	s_spiTransDone = 1;
 
 	//----- モジュールの初期化 -----
+	sd_Initialize();
+	sd_Mount();
 	lcd_Initialize();
 	wifi_Initialize();
 
@@ -293,16 +299,34 @@ void IRAM_ATTR SpiEventCallback(int event, void *arg)
 //----------------------------------------------------------------------
 void set_WaitSpiTrans(void)
 {
+	const TickType_t minimumWait = 1;
 	while(s_spiTransDone == 0)
 	{
-		vTaskDelay(1 / portTICK_PERIOD_MS);
+		vTaskDelay(minimumWait);
 	}
 }
 
 //----------------------------------------------------------------------
-//! @brief	SPI送信フラグクリア
+//! @brief	SPI送信フラグセット
 //----------------------------------------------------------------------
 void set_SetSpiTransFlag(int value)
 {
 	s_spiTransDone = value;
 }
+
+//----------------------------------------------------------------------
+//! @brief  通信ピンのミューテックス取得
+//----------------------------------------------------------------------
+void set_TakeCommunicationMutex(void)
+{
+	xSemaphoreTake(s_communicationPinMutex, portMAX_DELAY);
+}
+
+//----------------------------------------------------------------------
+//! @brief  通信ピンのミューテックス返却
+//----------------------------------------------------------------------
+void set_GiveCommunicationMutex(void)
+{
+	xSemaphoreGive(s_communicationPinMutex);
+}
+

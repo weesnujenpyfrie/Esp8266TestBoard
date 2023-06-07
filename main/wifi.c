@@ -75,8 +75,10 @@ void PerformSntp(void *arg)
 		{
 			snprintf(timeStr, 5+1, "%2d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
 		}
+		lcd_BeginDrawing();
 		lcd_Puts(timeArea, timeStr, Code_Sjis);
-		lcd_Update();
+		lcd_EndDrawing();
+		//lcd_Update();
 
 		vTaskDelay(1000 / portTICK_RATE_MS);
 	}
@@ -99,8 +101,9 @@ void HandleWifiEvent(void* arg, esp_event_base_t eventBase, int32_t eventId, voi
 		{
 		case WIFI_EVENT_STA_START:					// Stationスタート
 			esp_wifi_connect();
+			lcd_BeginDrawing();
 			lcd_PutImage(area, &statusIcon[2 * 8], NULL);
-			//lcd_Update();		// 別タスク(PerformSntp())で呼ばれるのでコメントアウト
+			lcd_EndDrawing();
 			break;
 
 		case WIFI_EVENT_STA_DISCONNECTED:			// APからStationの断線
@@ -112,19 +115,22 @@ void HandleWifiEvent(void* arg, esp_event_base_t eventBase, int32_t eventId, voi
 			}
 			else
 			{
+				lcd_BeginDrawing();
 				lcd_PutImage(area, &statusIcon[1 * 8], NULL);
-				//lcd_Update();		// 別タスク(PerformSntp())で呼ばれるのでコメントアウト
+				lcd_EndDrawing();
 				vTaskDelay(2000 / portTICK_RATE_MS);
 				esp_wifi_connect();
+				lcd_BeginDrawing();
 				lcd_PutImage(area, &statusIcon[2 * 8], NULL);
-				//lcd_Update();		// 別タスク(PerformSntp())で呼ばれるのでコメントアウト
+				lcd_EndDrawing();
 				s_retry_num = 0;
 			}
 			break;
 
 		case WIFI_EVENT_STA_CONNECTED:				// station connected to AP
+			lcd_BeginDrawing();
 			lcd_PutImage(area, &statusIcon[0 * 8], NULL);
-			//lcd_Update();		// 別タスク(PerformSntp())で呼ばれるのでコメントアウト
+			lcd_EndDrawing();
 			break;
 
 		case WIFI_EVENT_WIFI_READY:					// WiFi ready
@@ -152,15 +158,17 @@ void HandleWifiEvent(void* arg, esp_event_base_t eventBase, int32_t eventId, voi
 		{
 		case IP_EVENT_STA_GOT_IP:				// Stationが接続したAPからIP取得
 			event = (ip_event_got_ip_t*)eventData;
+			lcd_BeginDrawing();
 			lcd_Puts(textArea, ip4addr_ntoa(&event->ip_info.ip), Code_Utf8);
-			//lcd_Update();		// 別タスク(PerformSntp())で呼ばれるのでコメントアウト
+			lcd_EndDrawing();
 			s_retry_num = 0;
 			s_isWifiInitialized = 1;
 			break;
 
 		case IP_EVENT_STA_LOST_IP:				// StationがIPを失いIPが0にリセットされた
+			lcd_BeginDrawing();
 			lcd_Puts(textArea, "-.-.-.-", Code_Utf8);
-			//lcd_Update();		// 別タスク(PerformSntp())で呼ばれるのでコメントアウト
+			lcd_EndDrawing();
 			break;
 
 		case IP_EVENT_AP_STAIPASSIGNED:			// soft-APが接続したStationへIPを割り当てた
@@ -178,12 +186,6 @@ void HandleWifiEvent(void* arg, esp_event_base_t eventBase, int32_t eventId, voi
 //----------------------------------------------------------------------
 int wifi_Initialize(void)
 {
-	Rect area = {0, 0, 17 * 4, 8};
-	lcd_Puts(area, "□-.-.-.-", Code_Utf8);
-	area.x = 8, area.y = 16, area.w = 128, area.h = 16;
-	lcd_Puts(area, "Wi-Fiと時刻のテスト", Code_Utf8);
-	lcd_Update();
-
 	// Wi-Fi初期化
 	esp_netif_init();
 	ESP_ERROR_CHECK(esp_event_loop_create_default());

@@ -7,6 +7,7 @@
 #include <memory.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "driver/spi.h"
 #include "driver/gpio.h"
 
@@ -29,6 +30,7 @@ static const uint8_t noUpdate = 0xff;				// 更新箇所のない行
 // 静的変数
 static uint8_t s_vram[VRAM_SIZE];					// 1画面分のデータ.まずはこのデータを書き換えて、後でまとめてLCDに転送する.
 static uint8_t s_update[LCD_LINES][2];				// vram更新範囲 [行][0]開始位置、[行][1]終了位置
+static xSemaphoreHandle s_lcdDataMutex;				// s_vram, s_updateに対するミューテックス
 
 // プロトタイプ宣言
 static const uint8_t *GetFont(const char *text, int *width, int *count, CharCode charCode);
@@ -37,7 +39,7 @@ static inline void WaitMs(uint32_t timeMs);
 
 //----------------------------------------------------------------------
 //! @brief  LCD初期設定
-//! @note   起動時に1回だけ呼ぶ
+//! @note   起動時に1回だけ呼ぶ.
 //----------------------------------------------------------------------
 void lcd_Initialize(void)
 {
@@ -75,6 +77,9 @@ void lcd_Initialize(void)
 	const uint32_t commandDelayTimeMs = 8;		// リセット後コマンド受け付けるまで 6ms以上
 	const uint32_t activeDelayTimeMs = 100;		// 初期化後データを受け付けるまで 120ms以上
 
+	//----- 変数初期化 -----
+	s_lcdDataMutex = xSemaphoreCreateMutex();
+
 	//----- リセット -----
 	gpio_set_level(GPIO_LCDCS_NUM, 0);	// LCD RST = L
 	gpio_set_level(GPIO_SDCS_NUM, 0);
@@ -83,15 +88,19 @@ void lcd_Initialize(void)
 	gpio_set_level(GPIO_SDCS_NUM, 1);
 
 	//----- 初期化コマンド送信 -----
+	set_TakeCommunicationMutex();
 	set_SetPin(PinSetting_LcdMain, NULL);
 	WaitMs(commandDelayTimeMs);
 	gpio_set_level(GPIO_LCDCS_NUM, 0);	// CS=L
 	gpio_set_level(GPIO_MISO_LCDRS_NUM, 0);	// CD=L command
 	SendData(lcdInitialCommands, lcdInitialCommandSize);
 	gpio_set_level(GPIO_LCDCS_NUM, 1);	// CS=H
+	set_GiveCommunicationMutex();
 
 	WaitMs(activeDelayTimeMs);
+	lcd_BeginDrawing();
 	lcd_Cls();
+	lcd_EndDrawing();
 	lcd_Update();
 }
 
@@ -109,13 +118,13 @@ void lcd_Cls(void)
 }
 
 //----------------------------------------------------------------------
-//! @brief  直線表示
+//! @brief  直線描画
 //! @param	x0		[I]始点x
 //! @param	y0		[I]始点y
 //! @param	x1		[I]終点x
 //! @param	y1		[I]終点y
 //----------------------------------------------------------------------
-void lcd_DrawLine(int x0, int y0, int x1, int y1)
+void lcd_DrawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1)
 {
 	int dx = (x0 < x1) ? x1 - x0 : x0 - x1;
 	int dy = (y0 < y1) ? y1 - y0 : y0 - y1;
@@ -166,7 +175,7 @@ void lcd_DrawLine(int x0, int y0, int x1, int y1)
 }
 
 //----------------------------------------------------------------------
-//! @brief  文字列表示
+//! @brief  文字列描画
 //! @param	area		[I]文字列表示エリア
 //! @param	text		[I]文字列(Shift-JIS)
 //! @param	charCode	[I]キャラクタコード
@@ -234,7 +243,7 @@ const uint8_t *GetFont(const char *text, int *width, int *count, CharCode charCo
 }
 
 //----------------------------------------------------------------------
-//! @brief  画像表示
+//! @brief  画像描画
 //! @param	imageRect	[I]表示位置、画像サイズ[dot]
 //! @param	image		[I]画像データ
 //! @param	mask		[I]マスクデータ 表示部=1, NULL指定でマスクなし
@@ -307,9 +316,11 @@ void lcd_Update(void)
 	uint8_t x, w, y;
 	uint8_t cmd[3];
 
+	set_TakeCommunicationMutex();
 	set_SetPin(PinSetting_LcdMain, NULL);
 	gpio_set_level(GPIO_LCDCS_NUM, 0);	// CS=L
 
+	xSemaphoreTake(s_lcdDataMutex, portMAX_DELAY);
 	for(y = 0; y < LCD_LINES; y++)
 	{
 		x = s_update[y][0];
@@ -328,8 +339,26 @@ void lcd_Update(void)
 			s_update[y][0] = s_update[y][1] = noUpdate;
 		}
 	}
+	xSemaphoreGive(s_lcdDataMutex);
 
 	gpio_set_level(GPIO_LCDCS_NUM, 1);	// CS=H
+	set_GiveCommunicationMutex();
+}
+
+//----------------------------------------------------------------------
+//! @brief  描画開始
+//----------------------------------------------------------------------
+void lcd_BeginDrawing(void)
+{
+	xSemaphoreTake(s_lcdDataMutex, portMAX_DELAY);
+}
+
+//----------------------------------------------------------------------
+//! @brief  描画終了
+//----------------------------------------------------------------------
+void lcd_EndDrawing(void)
+{
+	xSemaphoreGive(s_lcdDataMutex);
 }
 
 //----------------------------------------------------------------------

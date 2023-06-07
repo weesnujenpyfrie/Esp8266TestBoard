@@ -21,5 +21,7 @@ void set_SetPin(enum PinSetting setting, void *param);
 void set_Task(void);
 void set_WaitSpiTrans(void);
 void set_SetSpiTransFlag(int value);
+void set_TakeCommunicationMutex(void);
+void set_GiveCommunicationMutex(void);
 
 #endif
