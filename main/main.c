@@ -12,72 +12,6 @@
 #include "setup.h"
 #include "lcd.h"
 
-#define MUTEX_EN 0
-
-void ExecTaskToUpdateLcd(void *arg)
-{
-	while(1)
-	{
-		lcd_Update();
-		vTaskDelay(1000 / portTICK_PERIOD_MS);
-	}
-}
-
-void ExecTaskToDrawLcd(void *arg)
-{
-	while(1)
-	{
-#if MUTEX_EN
-		lcd_BeginDrawing();
-#endif
-		Rect area = {0, 0, 16, 8};
-		lcd_Cls();
-		for(int y = 8; y < 64; y += 8)
-		{
-			area.y = y;
-			for(int x = 0; x < 128; x += 16)
-			{
-				area.x = x;
-				lcd_Puts(area, "末吉", Code_Utf8);
-			}
-		}
-		lcd_Cls();
-		for(int y = 8; y < 64; y += 8)
-		{
-			area.y = y;
-			for(int x = 0; x < 128; x += 16)
-			{
-				area.x = x;
-				lcd_Puts(area, "小吉", Code_Utf8);
-			}
-		}
-		lcd_Cls();
-		for(int y = 8; y < 64; y += 8)
-		{
-			area.y = y;
-			for(int x = 0; x < 128; x += 16)
-			{
-				area.x = x;
-				lcd_Puts(area, "中吉", Code_Utf8);
-			}
-		}
-		lcd_Cls();
-		for(int y = 8; y < 64; y += 8)
-		{
-			area.y = y;
-			for(int x = 0; x < 128; x += 16)
-			{
-				area.x = x;
-				lcd_Puts(area, "大吉", Code_Utf8);
-			}
-		}
-#if MUTEX_EN
-		lcd_EndDrawing();
-#endif
-		vTaskDelay(1000 / portTICK_PERIOD_MS);
-	}
-}
-
 //----------------------------------------------------------------------
 //! @brief  エントリポイント
 //----------------------------------------------------------------------
@@ -87,12 +21,20 @@ void app_main()
 	set_Initialize();
 
 	//----- テスト -----
-	const uint16_t taskStackSize = 768;
-	const UBaseType_t taskPriority = 1;
-
-	// タスク生成
-	xTaskCreate(ExecTaskToUpdateLcd, "update", taskStackSize, NULL, taskPriority, NULL);
-	xTaskCreate(ExecTaskToDrawLcd, "draw", taskStackSize, NULL, taskPriority, NULL);
+	char str[32 + 1];
+	size_t strLength;
+	FILE *fp = fopen("/sd/config.txt","rt");
+	if(fp != NULL)
+	{
+		strLength = fread(str, sizeof(char), 32, fp);
+		str[strLength] = '\0';
+		fclose(fp);
+		Rect area = {0, 8, 128, 8};
+		lcd_BeginDrawing();
+		lcd_Puts(area, str, Code_Utf8);
+		lcd_EndDrawing();
+		lcd_Update();
+	}
 
 	//----- ループ(Lチカ) -----
 	int led = 0;
