@@ -14,6 +14,7 @@
 #include "lcd.h"
 #include "font.h"
 #include "charcode.h"
+#include "setup.h"
 
 // 定義
 #define LCD_W 128									// LCD 横サイズ
@@ -28,13 +29,11 @@ static const uint8_t noUpdate = 0xff;				// 更新箇所のない行
 // 静的変数
 static uint8_t s_vram[VRAM_SIZE];					// 1画面分のデータ.まずはこのデータを書き換えて、後でまとめてLCDに転送する.
 static uint8_t s_update[LCD_LINES][2];				// vram更新範囲 [行][0]開始位置、[行][1]終了位置
-static int s_spiTransDone;
 
 // プロトタイプ宣言
 static const uint8_t *GetFont(const char *text, int *width, int *count, CharCode charCode);
 static void SendData(const uint8_t *data, int size);
 static inline void WaitMs(uint32_t timeMs);
-static void IRAM_ATTR SpiEventCallback(int event, void *arg);
 
 //----------------------------------------------------------------------
 //! @brief  LCD初期設定
@@ -42,25 +41,6 @@ static void IRAM_ATTR SpiEventCallback(int event, void *arg);
 //----------------------------------------------------------------------
 void lcd_Initialize(void)
 {
-	// SPI設定
-	spi_config_t spiConfig;											// 設定用の入れ物
-	spiConfig.interface.cpol = SPI_CPOL_LOW;						// アイドル時clk=L
-	spiConfig.interface.cpha = SPI_CPHA_LOW;						// clk=!POL時サンプリング
-	spiConfig.interface.bit_tx_order = SPI_BIT_ORDER_LSB_FIRST;		// [SDK誤記] この設定でMSB Firstになる
-	spiConfig.interface.bit_rx_order = SPI_BIT_ORDER_LSB_FIRST;		// [SDK誤記] この設定でMSB Firstになる
-	spiConfig.interface.byte_tx_order = SPI_BYTE_ORDER_LSB_FIRST;	// little endian (cmd=little固定, address=big固定)
-	spiConfig.interface.byte_rx_order = SPI_BYTE_ORDER_LSB_FIRST;	// little endian
-	spiConfig.interface.mosi_en = 1;
-	spiConfig.interface.miso_en = 0;
-	spiConfig.interface.cs_en = 0;
-	spiConfig.intr_enable.val = SPI_MASTER_DEFAULT_INTR_ENABLE;		// TRANS_DONE:true, WRITE_STATUS:false, READ_STATUS:false, WRITE_BUFFER:false, READ_BUFFER:false
-	spiConfig.mode = SPI_MASTER_MODE;								// マスターモード
-	spiConfig.clk_div = SPI_20MHz_DIV;								// 速度20MHz
-	spiConfig.event_cb = SpiEventCallback;							// SPIイベントコールバック関数登録
-	spi_init(HSPI_HOST, &spiConfig);
-
-	s_spiTransDone = 1;
-
 	const uint8_t lcdInitialCommands[] =		// 初期化コマンド
 	{
 		// リセット
@@ -103,6 +83,7 @@ void lcd_Initialize(void)
 	gpio_set_level(GPIO_SDCS_NUM, 1);
 
 	//----- 初期化コマンド送信 -----
+	set_SetPin(PinSetting_LcdMain, NULL);
 	WaitMs(commandDelayTimeMs);
 	gpio_set_level(GPIO_LCDCS_NUM, 0);	// CS=L
 	gpio_set_level(GPIO_MISO_LCDRS_NUM, 0);	// CD=L command
@@ -326,6 +307,7 @@ void lcd_Update(void)
 	uint8_t x, w, y;
 	uint8_t cmd[3];
 
+	set_SetPin(PinSetting_LcdMain, NULL);
 	gpio_set_level(GPIO_LCDCS_NUM, 0);	// CS=L
 
 	for(y = 0; y < LCD_LINES; y++)
@@ -373,7 +355,7 @@ void SendData(const uint8_t *data, int size)
 	trans.addr = &addr;
 	trans.bits.miso = 0;
 
-	s_spiTransDone = 1;
+	set_SetSpiTransFlag(1);
 
 	for(int pos = 0; size > 0; )
 	{
@@ -409,17 +391,15 @@ void SendData(const uint8_t *data, int size)
 		trans.mosi = (size == 0) ? NULL : (uint32_t *)&data[pos];
 		trans.bits.mosi = ((size >= maxTransferbytes) ? maxTransferbytes : size) * bitPerByte;
 
-		while(!s_spiTransDone);
-		//portENTER_CRITICAL();
-		s_spiTransDone = 0;
+		set_WaitSpiTrans();
+		set_SetSpiTransFlag(0);
 		spi_trans(HSPI_HOST, &trans);
-		//portEXIT_CRITICAL();
 
 		pos += (size >= maxTransferbytes) ? maxTransferbytes : size;
 		size -= (size >= maxTransferbytes) ? maxTransferbytes : size;
 		extraSize = (size < alignmentSize) ? size : alignmentSize;
 	}
-	while(!s_spiTransDone);
+	set_WaitSpiTrans();
 }
 
 //----------------------------------------------------------------------
@@ -429,21 +409,4 @@ void SendData(const uint8_t *data, int size)
 inline void WaitMs(uint32_t timeMs)
 {
 	vTaskDelay(timeMs / portTICK_PERIOD_MS);
-}
-
-//----------------------------------------------------------------------
-//! @brief  通信イベント処理
-//! @param  event	[I]イベントID
-//! @param  arg		[I]パラメータ
-//----------------------------------------------------------------------
-void IRAM_ATTR SpiEventCallback(int event, void *arg)
-{
-	switch(event)
-	{
-	case SPI_TRANS_DONE_EVENT:
-		s_spiTransDone = 1;
-		break;
-	default:
-		break;
-	}
 }
