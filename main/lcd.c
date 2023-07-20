@@ -189,7 +189,7 @@ void lcd_Puts(Rect area, const char *text, CharCode charCode)
 
 	letter.x = area.x;
 	letter.y = area.y;
-	while(*text != '\0' && letter.y < LCD_H)
+	while(*text != '\0' && letter.y < LCD_H && letter.y < area.y + area.h)
 	{
 		if(*text == '\n')
 		{

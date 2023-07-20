@@ -21,6 +21,20 @@ void app_main()
 	set_Initialize();
 
 	//----- テスト -----
+	char str[32 + 1];
+	size_t strLength;
+	FILE *fp = fopen("/sd/config.txt", "rt");
+	if(fp != NULL)
+	{
+		strLength = fread(str, sizeof(char), 32, fp);
+		str[strLength] = '\0';
+		fclose(fp);
+		Rect area = {0, 8, 128, 8};
+		lcd_BeginDrawing();
+		lcd_Puts(area, str, Code_Utf8);
+		lcd_EndDrawing();
+		lcd_Update();
+	}
 
 	//----- ループ(Lチカ) -----
 	int led = 0;
